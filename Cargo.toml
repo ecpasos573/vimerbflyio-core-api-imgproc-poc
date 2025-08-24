@@ -1,0 +1,36 @@
+[package]
+name = "vmbfcoreapi-imgproc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-web = "4"
+actix-rt = "2"
+dotenv = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+prometheus = "0.13"
+lazy_static = "1.4"
+uuid = { version = "1", features = ["v4"] }
+exif-oxide = "0.1.0"
+kamadak-exif = "0.6.1"
+exiftool = "0.2.6"
+url = "2.5.4"
+reqwest = { version = "0.11", features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3.31"
+anyhow = "1.0.98"
+scraper = "0.23.1"
+thiserror = "2.0.12"
+futures = "0.3.31"
+chromiumoxide = "0.7.0"
+actix-multipart = "0.7.2"
+tempfile = "3.21.0"
+magick_rust = "1.1.0"
+jsonwebtoken = "9.3.1"
+
+
+
