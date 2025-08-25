@@ -1,128 +1,149 @@
-# ===== 1. Builder Stage =====
-FROM rust:1.88-slim AS builder
+# ============================================================
+# Builder Stage
+# ============================================================
+FROM ubuntu:22.04 AS builder
 
-# Set the working directory
+ARG DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Install dependencies needed for building (OpenSSL, pkg-config, etc.)
+# ------------------------------
+# Install build dependencies
+# ------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    pkg-config \
-    libssl-dev \
-    ca-certificates \
-    build-essential \
- && rm -rf /var/lib/apt/lists/*
+    build-essential pkg-config wget curl ca-certificates git xz-utils jq unzip \
+    libssl-dev libjpeg-dev libpng-dev libtiff-dev libwebp-dev libfreetype6-dev \
+    liblcms2-dev libxml2-dev libbz2-dev liblzma-dev libz-dev libltdl-dev \
+    ocl-icd-opencl-dev clang libclang-dev llvm-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy manifest files for dependency caching
+# ------------------------------
+# Install Rust
+# ------------------------------
+RUN mkdir -p /root/.cargo \
+    && curl https://sh.rustup.rs -sSf | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# ------------------------------
+# Cache Rust deps before copying source
+# ------------------------------
 COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs \
+    && cargo build --release || true
+RUN rm -rf src
 
-# Create a dummy main.rs to allow dependency-only build
-RUN mkdir src && echo "fn main() {}" > src/main.rs
+# ------------------------------
+# Download Google Chrome per architecture
+# ------------------------------
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then \
+      CHROME_URL="https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"; \
+    elif [ "$ARCH" = "arm64" ]; then \
+      CHROME_URL="https://dl.google.com/linux/direct/google-chrome-stable_current_arm64.deb"; \
+    else \
+      echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    curl -sSL "$CHROME_URL" -o /cache-chrome.deb
 
-# Pre-build dependencies (so they are cached)
-RUN cargo build --release && rm -rf src
+# ------------------------------
+# Build ImageMagick from source
+# ------------------------------
+RUN mkdir -p /cache/imagemagick
+WORKDIR /cache/imagemagick
+RUN latest=$(curl -s https://download.imagemagick.org/archive/ | \
+        grep -o 'ImageMagick-[0-9\.]\+-[0-9]\+\.tar\.gz' | sort -V | tail -1) && \
+    curl -sSL "https://download.imagemagick.org/archive/$latest" -o ImageMagick.tar.gz && \
+    mkdir -p /app/imagemagick && tar -xzf ImageMagick.tar.gz -C /app/imagemagick --strip-components=1
+WORKDIR /app/imagemagick
+RUN ./configure --disable-dependency-tracking --enable-shared && \
+    make -j$(nproc) && make install && ldconfig
 
-# Clean /app before copying real source
-RUN rm -rf /app/*
+# Symlink MagickWand.pc automatically
+RUN pcfile=$(find /usr/local/lib/pkgconfig -name "MagickWand-*.pc" | head -n1) \
+    && if [ -n "$pcfile" ]; then ln -sf "$pcfile" /usr/local/lib/pkgconfig/MagickWand.pc; fi
 
-# Copy actual source code
-COPY src ./src
+# ------------------------------
+# Autodetect libclang path
+# ------------------------------
+RUN CLANG_DIR=$(dirname $(find /usr/lib /usr/lib64 /usr/local/lib -name "libclang.so*" | head -n1)) \
+    && if [ -z "$CLANG_DIR" ]; then echo "libclang.so not found" && exit 1; fi \
+    && echo "export LIBCLANG_PATH=$CLANG_DIR" >> /etc/profile.d/libclang.sh \
+    && echo "LIBCLANG_PATH=$CLANG_DIR" >> /etc/environment
+
+# ------------------------------
+# Copy project and build release
+# ------------------------------
+WORKDIR /app
 COPY . .
+RUN cargo build --release
 
-# Build the actual release binary
-RUN cargo build --release \
- && test -f target/release/vmbfcoreapi-imgproc
+# ============================================================
+# Runtime Stage
+# ============================================================
+FROM ubuntu:22.04 AS runtime
 
-# ===== 2. Runtime Stage =====
-FROM debian:bookworm-slim AS runtime
+ARG DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
 
-# Install dependencies needed for your app and Chrome
+# ------------------------------
+# Install minimal runtime dependencies
+# ------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    gnupg \
-    ca-certificates \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libc6 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libexpat1 \
-    libfontconfig1 \
-    libgbm1 \
-    libgcc-s1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxrender1 \
-    libxshmfence1 \
-    libxtst6 \
-    lsb-release \
-    xdg-utils \
-    --no-install-recommends
+    libssl3 libjpeg-turbo8 libpng16-16 libtiff5 libwebp7 libwebpdemux2 libwebpmux3 libfreetype6 \
+    liblcms2-2 libxml2 libbz2-1.0 liblzma5 libltdl7 libzstd1 \
+    ffmpeg exiftool ca-certificates curl xz-utils \
+    && rm -rf /var/lib/apt/lists/*
 
-# Download and install Google Chrome .deb, fix deps if needed
-RUN wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
- && apt-get install -y /tmp/chrome.deb || apt-get install -f -y \
- && rm /tmp/chrome.deb \
- && rm -rf /var/lib/apt/lists/*
+# ------------------------------
+# Install Google Chrome per architecture
+# ------------------------------
+COPY --from=builder /cache-chrome.deb /tmp/google-chrome.deb
+RUN apt-get update && apt-get install -y ./tmp/google-chrome.deb || apt-get -f install -y \
+    && rm -rf /var/lib/apt/lists/* /tmp/google-chrome.deb
 
+# Ensure Chrome binary is accessible
+RUN ln -sf /usr/bin/google-chrome /usr/bin/chromium-browser
 
+# ------------------------------
+# Copy ImageMagick libraries from builder
+# ------------------------------
+COPY --from=builder /usr/local /usr/local
+COPY --from=builder /etc/profile.d/libclang.sh /etc/profile.d/libclang.sh
+COPY --from=builder /etc/environment /etc/environment
 
+ENV PATH="/usr/local/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
-# Install only runtime dependencies (minimal size)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 \
-    ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-
-
-# Install dependencies and ExifTool
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libimage-exiftool-perl \
- && rm -rf /var/lib/apt/lists/*
-
-# Verify installation
-RUN exiftool -ver
-
-
-# Create a non-root user for security
+# ------------------------------
+# Create non-root user
+# ------------------------------
 RUN useradd -ms /bin/bash appuser
-
-# Create working directory with correct ownership
 RUN mkdir -p /app/workingdir/downloads && chown -R appuser:appuser /app/workingdir
 
-# Copy the compiled binary from builder
+# ------------------------------
+# Copy release binary
+# ------------------------------
 COPY --from=builder /app/target/release/vmbfcoreapi-imgproc /usr/local/bin/vmbfcoreapi-imgproc
 
-# Change ownership to the non-root user
-RUN chown appuser:appuser /usr/local/bin/vmbfcoreapi-imgproc
+# Strip binaries and shared objects
+RUN strip /usr/local/bin/vmbfcoreapi-imgproc || true && \
+    find /usr/local/lib -type f -name "*.so*" -exec strip --strip-unneeded {} + || true && \
+    rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/locale/*
 
+RUN chown appuser:appuser /usr/local/bin/vmbfcoreapi-imgproc \
+    && chmod +x /usr/local/bin/vmbfcoreapi-imgproc
 
-# Switch to non-root user
+# ------------------------------
+# Switch to non-root
+# ------------------------------
 USER appuser
 
-# Environment variables for Actix
 ENV RUST_LOG=info \
     APP_ADDRESS=0.0.0.0 \
-    APP_PORT=8180
+    APP_PORT=8180 \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
-# Expose the port your Actix server listens on
 EXPOSE 8180
-
-RUN chmod +x /usr/local/bin/vmbfcoreapi-imgproc
-
 WORKDIR /usr/local/bin
 
-# Command to run the binary
 CMD ["./vmbfcoreapi-imgproc"]

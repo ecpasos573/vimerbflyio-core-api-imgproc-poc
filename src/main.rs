@@ -34,7 +34,7 @@ async fn main() -> io::Result<()> {
             App::new()
                 .wrap(ApiKey {
                     vmbfcoreapi_imgproc_mkey: config.vmbfcoreapi_imgproc_mkey.clone(),
-                    vmbfcoreapi_imgproc_uid: config.vmbfcoreapi_imgproc_uid.clone(),
+                    vmbfcoreapi_imgproc_muid: config.vmbfcoreapi_imgproc_muid.clone(),
                 })
                 .wrap(Logger::default())
                 // .app_data(web::Data::new(pool.clone()))

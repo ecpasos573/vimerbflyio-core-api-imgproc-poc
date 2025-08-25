@@ -7,7 +7,7 @@ async fn test_api_key_middleware_success() {
         App::new()
             .wrap(ApiKey {
                 vmbfcoreapi_imgproc_mkey: "test-key".into(),
-                vmbfcoreapi_imgproc_uid: "test-uid".into(),
+                vmbfcoreapi_imgproc_muid: "test-uid".into(),
             })
             .route("/protected", web::get().to(|| async { HttpResponse::Ok().body("OK") }))
     ).await;
@@ -28,7 +28,7 @@ async fn test_api_key_middleware_failure() {
         App::new()
             .wrap(ApiKey {
                 vmbfcoreapi_imgproc_mkey: "test-key".into(),
-                vmbfcoreapi_imgproc_uid: "test-uid".into(),
+                vmbfcoreapi_imgproc_muid: "test-uid".into(),
             })
             .route("/protected", web::get().to(|| async { HttpResponse::Ok().body("OK") }))
     ).await;

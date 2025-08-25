@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct ApiKey {
     pub vmbfcoreapi_imgproc_mkey: String,
-    pub vmbfcoreapi_imgproc_uid: String,
+    pub vmbfcoreapi_imgproc_muid: String,
 }
 
 impl<S> Transform<S, ServiceRequest> for ApiKey
@@ -28,7 +28,7 @@ where
         ok(ApiKeyMiddleware {
             service: Rc::new(service),
             vmbfcoreapi_imgproc_mkey: self.vmbfcoreapi_imgproc_mkey.clone(),
-            vmbfcoreapi_imgproc_uid: self.vmbfcoreapi_imgproc_uid.clone(),
+            vmbfcoreapi_imgproc_muid: self.vmbfcoreapi_imgproc_muid.clone(),
         })
     }
 }
@@ -36,7 +36,7 @@ where
 pub struct ApiKeyMiddleware<S> {
     service: Rc<S>,
     vmbfcoreapi_imgproc_mkey: String,
-    vmbfcoreapi_imgproc_uid: String,
+    vmbfcoreapi_imgproc_muid: String,
 }
 
 
@@ -108,7 +108,7 @@ where
             .get("Authorization")
             .and_then(|v| v.to_str().ok())
             .and_then(|header| header.strip_prefix("Bearer "))
-            .map(|token| is_auth_valid(token, &self.vmbfcoreapi_imgproc_mkey, &self.vmbfcoreapi_imgproc_uid))
+            .map(|token| is_auth_valid(token, &self.vmbfcoreapi_imgproc_mkey, &self.vmbfcoreapi_imgproc_muid))
             .unwrap_or(false);
 
         Box::pin(async move {

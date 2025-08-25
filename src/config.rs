@@ -3,7 +3,7 @@ use std::env;
 
 pub struct AppConfig {
     pub vmbfcoreapi_imgproc_mkey: String,
-    pub vmbfcoreapi_imgproc_uid: String,
+    pub vmbfcoreapi_imgproc_muid: String,
     pub database_url: String,
     pub host: String,
     pub port: String,
@@ -16,7 +16,7 @@ impl AppConfig {
 
         Self {
             vmbfcoreapi_imgproc_mkey: env::var("VMBFCOREAPI_IMGPROC_MKEY").expect("VMBFCOREAPI_IMGPROC_MKEY must be set"),
-            vmbfcoreapi_imgproc_uid: env::var("VMBFCOREAPI_IMGPROC_UID").expect("VMBFCOREAPI_IMGPROC_UID must be set"),
+            vmbfcoreapi_imgproc_muid: env::var("VMBFCOREAPI_IMGPROC_MUID").expect("VMBFCOREAPI_IMGPROC_MUID must be set"),
             database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
             host: env::var("HOST").expect("HOST must be set"),
             port: env::var("PORT").expect("PORT must be set"),
