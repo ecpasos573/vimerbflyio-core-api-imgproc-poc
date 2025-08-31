@@ -1,7 +1,7 @@
 # ============================================================
 # Builder Stage
 # ============================================================
-FROM ubuntu:22.04 AS builder
+FROM rust:1.88-slim AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------
-# Install Rust
+# Install Rust (via rustup for extra components)
 # ------------------------------
 RUN mkdir -p /root/.cargo \
     && curl https://sh.rustup.rs -sSf | sh -s -- -y
@@ -32,25 +32,12 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 RUN rm -rf src
 
 # ------------------------------
-# Download Google Chrome per architecture
-# ------------------------------
-RUN ARCH=$(dpkg --print-architecture) && \
-    if [ "$ARCH" = "amd64" ]; then \
-      CHROME_URL="https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"; \
-    elif [ "$ARCH" = "arm64" ]; then \
-      CHROME_URL="https://dl.google.com/linux/direct/google-chrome-stable_current_arm64.deb"; \
-    else \
-      echo "Unsupported architecture: $ARCH" && exit 1; \
-    fi && \
-    curl -sSL "$CHROME_URL" -o /cache-chrome.deb
-
-# ------------------------------
 # Build ImageMagick from source
 # ------------------------------
 RUN mkdir -p /cache/imagemagick
 WORKDIR /cache/imagemagick
 RUN latest=$(curl -s https://download.imagemagick.org/archive/ | \
-        grep -o 'ImageMagick-[0-9\.]\+-[0-9]\+\.tar\.gz' | sort -V | tail -1) && \
+    grep -o 'ImageMagick-[0-9\.]\+-[0-9]\+\.tar\.gz' | sort -V | tail -1) && \
     curl -sSL "https://download.imagemagick.org/archive/$latest" -o ImageMagick.tar.gz && \
     mkdir -p /app/imagemagick && tar -xzf ImageMagick.tar.gz -C /app/imagemagick --strip-components=1
 WORKDIR /app/imagemagick
@@ -76,32 +63,28 @@ WORKDIR /app
 COPY . .
 RUN cargo build --release
 
+
 # ============================================================
 # Runtime Stage
 # ============================================================
-FROM ubuntu:22.04 AS runtime
+FROM debian:bookworm-slim AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
 # ------------------------------
-# Install minimal runtime dependencies
+# Install minimal runtime dependencies (incl. Chromium)
 # ------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 libjpeg-turbo8 libpng16-16 libtiff5 libwebp7 libwebpdemux2 libwebpmux3 libfreetype6 \
+    libssl3 libjpeg62-turbo libpng16-16 libtiff6 libwebp7 libwebpdemux2 libwebpmux3 libfreetype6 \
     liblcms2-2 libxml2 libbz2-1.0 liblzma5 libltdl7 libzstd1 \
-    ffmpeg exiftool ca-certificates curl xz-utils \
+    ffmpeg exiftool ca-certificates curl xz-utils wget gnupg \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
 
-# ------------------------------
-# Install Google Chrome per architecture
-# ------------------------------
-COPY --from=builder /cache-chrome.deb /tmp/google-chrome.deb
-RUN apt-get update && apt-get install -y ./tmp/google-chrome.deb || apt-get -f install -y \
-    && rm -rf /var/lib/apt/lists/* /tmp/google-chrome.deb
+RUN apt-get update && apt-get install -y --no-install-recommends chromium-sandbox \
+    && rm -rf /var/lib/apt/lists/*
 
-# Ensure Chrome binary is accessible
-RUN ln -sf /usr/bin/google-chrome /usr/bin/chromium-browser
 
 # ------------------------------
 # Copy ImageMagick libraries from builder
@@ -140,8 +123,7 @@ USER appuser
 
 ENV RUST_LOG=info \
     APP_ADDRESS=0.0.0.0 \
-    APP_PORT=8180 \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    APP_PORT=8180
 
 EXPOSE 8180
 WORKDIR /usr/local/bin
