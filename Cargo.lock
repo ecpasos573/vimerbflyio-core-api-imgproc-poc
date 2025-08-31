@@ -4138,6 +4138,7 @@ dependencies = [
  "kamadak-exif",
  "lazy_static",
  "magick_rust",
+ "once_cell",
  "prometheus",
  "reqwest 0.11.27",
  "scraper",
