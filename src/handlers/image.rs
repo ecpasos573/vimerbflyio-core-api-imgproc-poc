@@ -216,7 +216,18 @@ async fn get_images_from_requests(query: web::Query<HashMap<String, String>>) ->
         .to_owned();
 
     // Launch Chromium browser
-    let (browser, mut handler) = Browser::launch(BrowserConfig::builder().build().unwrap())
+    // This bypasses the sandbox entirely.
+    // Safe inside Docker, as long as you don’t let untrusted code run inside the container.
+    let args: Vec<String> = vec![
+        "--no-sandbox".into(),
+        "--disable-setuid-sandbox".into(),
+        "--disable-dev-shm-usage".into(), // optional, fixes /dev/shm mount issues
+    ];
+
+    let (browser, mut handler) = Browser::launch(
+        BrowserConfig::builder().chrome_executable("/usr/bin/chromium")
+        .args(args)
+        .build().unwrap())
         .await
         .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Browser launch failed: {}", e)))?;
 
